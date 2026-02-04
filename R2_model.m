@@ -91,10 +91,6 @@ prop_sig    = channel(tx_radiated, radar_pos, tgt_pos, radar_vel, tgt_vel);
 rx_clean    = target(prop_sig);
 rx          = collector(rx_clean, ang);
 
-% Front-end gain
-LNA_gain = 1e3;     % ~60 dB
-rx = rx * LNA_gain;
-
 % RNG control
 switch RNG_MODE
     case "shuffle", rng('shuffle');
@@ -102,7 +98,8 @@ switch RNG_MODE
     otherwise,      rng('shuffle');
 end
 
-% AWGN addition
+% Input-referred AWGN (added BEFORE LNA to model realistic thermal noise)
+% Per Section 3.5.1: N = kT0*F*B — noise must be at receiver input
 if NOISE_SINGLE_SWEEP_ONLY
     rx1d_clean = rx(:);
     rx1d = rx1d_clean; % init
@@ -115,6 +112,10 @@ else
     rx1d = awgn(rx, SNR_dB, 'measured');
     rx1d = rx1d(:);
 end
+
+% Front-end LNA gain (amplifies both signal AND noise together)
+LNA_gain = 1e3;     % ~60 dB
+rx1d = rx1d * LNA_gain;
 
 % Length match
 tx1d = tx(:);
