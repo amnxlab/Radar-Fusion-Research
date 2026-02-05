@@ -21,17 +21,24 @@
 
 **Goal**: Replace constant RCS with realistic fluctuation models and verify noise characteristics align with radar range equation.
 
-#### Task 1.1: Implement Fluctuating RCS with Swerling II Model
-- [ ] Replace constant RCS values in both models:
-  - R1_model.m: Current `-17 dBsm` → Swerling II fluctuating
-  - R2_model.m: Current `-9.5 dBsm` → Swerling II fluctuating
-- [ ] Simulate 20 dB amplitude fluctuations (UAV resonance region behavior)
-- [ ] Validate fluctuations across multiple chirp sweeps
-- [ ] Document physical justification for AFS stage
+#### Task 1.1: Implement Fluctuating RCS with Swerling II Model ✓
+- [x] Replace constant RCS values in both models:
+  - R1_model.m: `-17 dBsm` → Swerling II fluctuating (COMPLETED)
+  - R2_model.m: `-9.5 dBsm` → Swerling II fluctuating (COMPLETED)
+- [x] Simulate 20 dB amplitude fluctuations (UAV resonance region behavior)
+- [x] Validate fluctuations across multiple chirp sweeps
+- [x] Document physical justification for AFS stage
 
-**Files to Modify**: `R1_model.m` (line ~72), `R2_model.m` (line ~72)  
+**Implementation Complete** (February 4, 2026):
+- Created `targets/SwerlingIITarget.m` - Core Swerling II class with chi-squared(2) statistics
+- Created `targets/DroneRCSModel.m` - UAV extension with multi-scatterer and elevation patterns
+- Created `targets/run_swerling_demo.m` - Visualization and validation script
+- Integrated into both R1 and R2 models
+- Documentation in `docs/swerling_ii_model.md`
+
+**Files Modified**: `R1_model.m`, `R2_model.m`  
+**Files Created**: `targets/SwerlingIITarget.m`, `targets/DroneRCSModel.m`, `targets/run_swerling_demo.m`, `docs/swerling_ii_model.md`  
 **Dependencies**: None  
-**Estimated Effort**: 2-4 hours  
 **Physics Rationale**: UAVs in the resonance region exhibit significant RCS fluctuations; constant RCS models fail to capture this and don't justify the need for Adaptive Fusion Selection (AFS).
 
 ---
@@ -132,16 +139,37 @@
 
 **Goal**: Implement adaptive logic to handle RCS fluctuations and assign trust scores to each radar stream.
 
-#### Task 4.1: Implement AFS (Adaptive Fusion Selection) Logic
-- [ ] Design CFAR-based noise gate for range cells
-- [ ] Implement cell detection: compare detection cell vs reference cells
-- [ ] Nullify pulses where amplitude < threshold (RCS null condition)
-- [ ] Test with Swerling II fluctuations from Task 1.1
-- [ ] Tune CFAR parameters (guard cells, reference cells, threshold)
+#### Task 4.1: Implement AFS (Adaptive Fusion Selection) Logic ✓
+**Status**: COMPLETED (February 4, 2026)
 
-**Files to Create**: `afs_noise_gate.m`  
-**Dependencies**: Task 1.1 (requires fluctuating RCS)  
-**Estimated Effort**: 8-10 hours  
+**Implementation**: AFS honest mode with CFAR-like sliding window detection
+- [x] Design CFAR-based noise gate for range cells
+- [x] Implement cell detection: compare detection cell vs reference cells
+- [x] Nullify pulses where amplitude < threshold (RCS null condition)
+- [x] Test with Swerling II fluctuations from Task 1.1
+- [x] Tune CFAR parameters (guard cells, reference cells, threshold)
+- [x] **HONEST MODE**: Uses estimated range (R_est) instead of ground truth
+- [x] Validation mode for performance evaluation (range_true for metrics only)
+- [x] Integration into R1_model.m and R2_model.m with toggle controls
+
+**Files Created/Modified**: 
+- `apply_AFS.m` (existing file updated to honest mode)
+- `R1_model.m` (AFS integration with Section 8a)
+- `R2_model.m` (AFS integration with Section 8a)
+- `docs/afs_honest_plan.md` (design documentation)
+- `docs/afs_code_changes_summary.md` (implementation guide)
+
+**Key Feature**: AFS operates on **estimated** range from phase-slope method, making performance evaluation realistic and deployment-ready
+
+**Usage**:
+```matlab
+% In R1_model.m or R2_model.m (Section 0: Toggles)
+APPLY_AFS = true;              % Enable AFS processing
+PLOT_AFS_PROCESSING = true;    % Show diagnostic plots
+```
+
+**Dependencies**: Task 1.1 ✓ (completed)  
+**Actual Effort**: 3 hours (design + implementation + testing)  
 **Reference**: Rohling (1983) - "Radar CFAR Thresholding in Clutter"
 
 ---

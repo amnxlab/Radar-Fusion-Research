@@ -16,6 +16,15 @@ PLOT_RANGE_DOPPLER     = false;     % Range-Doppler Map (plot-only, never used b
 SAVE_BEAT_FILES        = true;      % Save beat .mat/.txt
 USE_NARROW_PLOT        = true;      % 2nd-pass BP for visualization ONLY
 
+% ***** AFS PROCESSING *****
+APPLY_AFS             = false;      % Enable Amplitude Fluctuation Suppression (honest mode)
+PLOT_AFS_PROCESSING   = false;      % Plot AFS diagnostics (if APPLY_AFS=true)
+
+% ***** SWERLING II TARGET MODEL *****
+USE_SWERLING_II        = true;      % Enable pulse-to-pulse RCS fluctuation
+PLOT_SWERLING          = true;      % Plot Swerling II RCS fluctuation and histogram
+SWERLING_MEAN_RCS_DBSM = -9.5;      % Mean RCS in dBsm for UAV at 24 GHz
+
 % ***** SINGLE-SWEEP (N=1) GUARD SWITCHES *****
 TEST_SINGLE_SWEEP       = true;     % true => detector uses exactly one sweep; no slow-time ops
 FIXED_SWEEP_IDX         = 1;        % sweep index used in N=1 mode (1-based)
@@ -41,7 +50,7 @@ NumSweeps  = 1024;         % total chirps
 % Scenario
 range_true = 37;           % m
 velocity   = 50;           % m/s (radial)
-SNR_dB     = -4;        % dB (post-LNA SNR unless NOISE_SINGLE_SWEEP_ONLY=true)
+SNR_dB     = -2;        % dB (post-LNA SNR unless NOISE_SINGLE_SWEEP_ONLY=true)
 
 % Derived
 mu       = bw/sweep_time;               % Hz/s (chirp slope)
@@ -67,28 +76,65 @@ tx = waveform();                        % complex baseband chirp train
 Ns_total = numel(tx);
 t_all = (0:Ns_total-1).'/fs;
 
-%% ===================== 3) Target, Channel, Front-end =====================
-rcs_val = 0.112; % m^2 (example 24 GHz)
-target  = phased.RadarTarget('MeanRCS',rcs_val,'OperatingFrequency',fc);
-channel = phased.FreeSpace('OperatingFrequency',fc,'TwoWayPropagation',true,'SampleRate',fs);
+%% ===================== 3) Target Model - Swerling II =====================
+% Import custom Swerling II target model (generates fluctuating amplitudes)
+addpath(fullfile(fileparts(mfilename('fullpath')), 'targets'));
 
-target_motion = phased.Platform('InitialPosition',[range_true;0;0],'Velocity',[velocity;0;0]);
-radar_motion  = phased.Platform('InitialPosition',[0;0;0],'Velocity',[0;0;0]);
+rcs_mean_m2 = 10^(SWERLING_MEAN_RCS_DBSM / 10);  % Convert dBsm to m²
 
-collector   = phased.Collector('OperatingFrequency',fc);
-radiator    = phased.Radiator('OperatingFrequency',fc);
-transmitter = phased.Transmitter('PeakPower',1,'Gain',30);
+if USE_SWERLING_II
+    % Create Swerling II target model (SEPARATE from phased.RadarTarget)
+    % This generates IID complex amplitudes with |α|² ~ Chi-squared(2 DOF)
+    swerling_target = SwerlingIITarget(SWERLING_MEAN_RCS_DBSM, NumSweeps, fc, RNG_MODE);
+    [alpha_fluctuating, rcs_fluctuating] = swerling_target.generateFluctuatingRCS();
+    
+    % Get AFS data structure for downstream processing
+    afs_data = swerling_target.getAFSData(SNR_dB);
+    
+    % Normalize alpha to unit mean power (preserve signal mean, add fluctuation)
+    alpha_normalized = alpha_fluctuating / sqrt(mean(abs(alpha_fluctuating).^2));
+    
+    % Print summary
+    swerling_target.printSummary();
+    
+    % Use STATIC phased.RadarTarget (Swerling fluctuation applied after dechirp)
+    target = phased.RadarTarget('MeanRCS', rcs_mean_m2, 'OperatingFrequency', fc, 'Model', 'Nonfluctuating');
+else
+    % Static RCS - no fluctuation
+    fprintf('\n--- Static RCS Model (24 GHz) ---\n');
+    fprintf('RCS: %.2f dBsm (%.4f m²)\n', SWERLING_MEAN_RCS_DBSM, rcs_mean_m2);
+    target = phased.RadarTarget('MeanRCS', rcs_mean_m2, 'OperatingFrequency', fc, 'Model', 'Nonfluctuating');
+    alpha_normalized = ones(NumSweeps, 1);  % No scaling
+    rcs_fluctuating = ones(NumSweeps, 1) * rcs_mean_m2;
+    afs_data = struct('low_snr_mask', false(NumSweeps, 1), 'pct_low_snr', 0, ...
+                      'local_snr_dB', SNR_dB * ones(NumSweeps, 1), 'threshold_dB', SNR_dB - 6);
+end
 
-% Single-look angle (broadside)
+% Setup phased objects for signal propagation
+channel = phased.FreeSpace('OperatingFrequency', fc, 'TwoWayPropagation', true, 'SampleRate', fs);
+
+target_motion = phased.Platform('InitialPosition', [range_true;0;0], 'Velocity', [velocity;0;0]);
+radar_motion  = phased.Platform('InitialPosition', [0;0;0], 'Velocity', [0;0;0]);
+
+collector   = phased.Collector('OperatingFrequency', fc);
+radiator    = phased.Radiator('OperatingFrequency', fc);
+transmitter = phased.Transmitter('PeakPower', 1, 'Gain', 30);
+
+% Get positions and angle
 [tgt_pos, tgt_vel]     = target_motion(sweep_time);
 [radar_pos, radar_vel] = radar_motion(sweep_time);
 [~, ang] = rangeangle(tgt_pos, radar_pos);
 
-% Tx -> channel -> target -> Rx
+%% ===================== 3a) Signal Generation =====================
+% Use single-pass processing with STATIC phased.RadarTarget
+% Swerling II amplitude fluctuation will be applied AFTER dechirp (Section 6)
+% This is the correct approach per MathWorks documentation:
+% - Generate clean signal, then apply amplitude scaling per chirp
+
 tx_pwr      = transmitter(tx);
 tx_radiated = radiator(tx_pwr, ang);
 prop_sig    = channel(tx_radiated, radar_pos, tgt_pos, radar_vel, tgt_vel);
-rx_clean    = target(prop_sig);
+rx_clean    = target(prop_sig);  % Static RCS - fluctuation applied after dechirp
 rx          = collector(rx_clean, ang);
 
 % RNG control
@@ -194,6 +240,52 @@ rxM = reshape(rx1d(1:Nsweep*N_sweeps_total), Nsweep, []);
 % Dechirp (complex beat per sweep)
 beatM_full = rxM .* conj(txM);
 t_fast = (0:Nsweep-1).'/fs;
+
+% ===== Apply Swerling II Amplitude Scaling AFTER Dechirp =====
+% This is the correct MathWorks approach:
+% - Generate clean signal through static phased.RadarTarget
+% - Apply amplitude fluctuation (α) per chirp after dechirp
+% - α is generated by SwerlingIITarget class with chi-squared(2) statistics
+
+if USE_SWERLING_II
+    fprintf('\n--- Applying Swerling II Amplitude Scaling ---\n');
+    
+    % Extend alpha_normalized to match actual number of sweeps
+    alpha_extended = alpha_normalized;
+    if numel(alpha_extended) < N_sweeps_total
+        % Repeat pattern if we have more sweeps than generated alphas
+        alpha_extended = repmat(alpha_normalized, ceil(N_sweeps_total/numel(alpha_normalized)), 1);
+    end
+    alpha_extended = alpha_extended(1:N_sweeps_total);
+    
+    % Apply amplitude scaling to each chirp
+    for m = 1:N_sweeps_total
+        beatM_full(:, m) = beatM_full(:, m) * alpha_extended(m);
+    end
+    
+    fprintf('Applied amplitude scaling to %d chirps\n', N_sweeps_total);
+    fprintf('Alpha range: %.2f to %.2f (linear)\n', min(abs(alpha_extended)), max(abs(alpha_extended)));
+end
+
+% ===== Measure Power Per-Chirp (Now Shows Full Swerling II Fluctuation) =====
+chirp_power_dB = zeros(N_sweeps_total, 1);
+for m = 1:N_sweeps_total
+    chirp_power_dB(m) = 10*log10(mean(abs(beatM_full(:,m)).^2) + eps);
+end
+chirp_power_dB_norm = chirp_power_dB - mean(chirp_power_dB);  % Normalize to mean
+
+% Update AFS data with measured power (post-scaling)
+if USE_SWERLING_II
+    % Update afs_data from SwerlingIITarget with measured values
+    afs_data.chirp_power_dB = chirp_power_dB;
+    afs_data.chirp_power_dB_norm = chirp_power_dB_norm;
+    afs_data.measured_range_dB = max(chirp_power_dB_norm) - min(chirp_power_dB_norm);
+    
+    fprintf('\n--- Swerling II Verification (After Scaling) ---\n');
+    fprintf('Measured chirp power range: %.1f dB\n', afs_data.measured_range_dB);
+    fprintf('Measured chirp power std:   %.2f dB\n', std(chirp_power_dB_norm));
+    fprintf('Low-SNR pulses (AFS candidates): %.1f%%\n', afs_data.pct_low_snr);
+end
 
 % Detect UP sweeps from TX phase slope (for plotting/reporting)
 phi_tx = unwrap(angle(txM));           % Nsweep x N_sweeps
@@ -328,6 +420,53 @@ fprintf('WIDE-IF  PHASE-SLOPE: fb=%.3f MHz -> R=%.3f m\n', fb_ps/1e6, R_ps);
 fb_est = fb_ps;
 R_est  = R_ps;
 
+%% ===================== 8a) AFS Processing (Honest Mode - Optional) =====================
+% Apply Amplitude Fluctuation Suppression to mitigate Swerling II RCS fading
+% **HONEST MODE**: AFS uses ESTIMATED range (R_est), not ground truth (range_true)
+% This makes evaluation realistic and deployment-ready
+
+if APPLY_AFS && USE_SWERLING_II && exist('beatM_full', 'var') && ~isempty(beatM_full)
+    fprintf('\n========== AFS Processing (Honest Mode) ==========\n');
+    
+    % Prepare AFS parameters
+    afs_params = struct();
+    afs_params.range_estimate = R_est;        % ESTIMATED range from phase-slope
+    afs_params.delta_R = c / (2 * bw);        % Range resolution (m)
+    afs_params.v_r_max = abs(velocity);       % Use scenario velocity for protection cells
+    afs_params.T_r = sweep_time;              % Chirp repetition interval (s)
+    afs_params.n_ref = 8;                     % Reference cells per side
+    afs_params.fs = fs;                       % Sampling frequency
+    afs_params.plot_enable = PLOT_AFS_PROCESSING;
+    
+    % Optional: Pass ground truth for evaluation metrics ONLY (never used for detection)
+    afs_params.range_true = range_true;       % For error analysis in metrics output
+    
+    % Apply AFS to beat matrix
+    [beat_cleaned, afs_metrics] = apply_AFS(beatM_full, afs_params);
+    
+    % Report results
+    fprintf('AFS Results:\n');
+    fprintf('  - Removed chirps: %d / %d (η = %.1f%%)\n', ...
+            afs_metrics.n_removed, afs_metrics.n_total, afs_metrics.eta * 100);
+    fprintf('  - Theoretical SNR gain: %.2f dB\n', afs_metrics.snr_gain_dB);
+    if isfield(afs_metrics, 'range_error_m')
+        fprintf('  - [EVAL] Range estimate error: %.3f m\n', afs_metrics.range_error_m);
+    end
+    
+    % Store for downstream fusion processing
+    afs_results = struct();
+    afs_results.beat_cleaned = beat_cleaned;
+    afs_results.metrics = afs_metrics;
+    afs_results.params_used = afs_params;
+else
+    if APPLY_AFS && ~USE_SWERLING_II
+        fprintf('\n[INFO] AFS skipped: Swerling II disabled (no RCS fluctuation)\n');
+    elseif APPLY_AFS
+        fprintf('\n[INFO] AFS skipped: beatM_full not available\n');
+    end
+    afs_results = struct('enabled', false);
+end
+
 % ===== Stage 2 (Optional Narrow Viz) =====
 x_nar = [];
 if USE_NARROW_PLOT && isfinite(fb_est) && fb_est > 1e5
@@ -386,6 +525,69 @@ if PLOT_RANGE_DOPPLER
     xlabel('Doppler (Hz)'); ylabel('Range (m)'); title('RDM (UP-only) — not used by detector');
 end
 
+%% ===================== 10a) Swerling II Visualization =====================
+if USE_SWERLING_II && PLOT_SWERLING
+    figure('Name', 'Swerling II RCS Fluctuation (24 GHz)', 'Color', 'w', 'Position', [100, 100, 1200, 800]);
+    
+    % Plot 1: Measured per-chirp power pattern (this IS the Swerling II fluctuation)
+    subplot(2,2,1);
+    plot(1:N_sweeps_total, chirp_power_dB_norm, 'r-', 'LineWidth', 0.8);
+    hold on;
+    yline(0, 'b--', 'LineWidth', 1.5, 'Label', 'Mean');
+    yline(-10, 'k:', 'LineWidth', 0.5);
+    yline(10, 'k:', 'LineWidth', 0.5);
+    hold off;
+    grid on;
+    xlabel('Chirp Index');
+    ylabel('Power Deviation (dB)');
+    title(sprintf('Swerling II Power Fluctuation (Range: %.1f dB)', range(chirp_power_dB_norm)));
+    
+    % Plot 2: Measured per-chirp power with AFS candidates
+    subplot(2,2,2);
+    plot(1:N_sweeps_total, chirp_power_dB_norm, 'r-', 'LineWidth', 0.8);
+    hold on;
+    yline(0, 'b--', 'LineWidth', 1.5);
+    % Mark low-SNR pulses for AFS
+    low_snr_idx = find(afs_data.low_snr_mask);
+    if ~isempty(low_snr_idx)
+        scatter(low_snr_idx, chirp_power_dB_norm(low_snr_idx), 20, 'b', 'filled');
+    end
+    % Draw threshold line (relative to mean)
+    yline(-6, 'm--', 'LineWidth', 1.5, 'Label', 'AFS Threshold');
+    hold off;
+    grid on;
+    xlabel('Chirp Index');
+    ylabel('Power Deviation (dB)');
+    title(sprintf('AFS Candidates (%.1f%% flagged)', afs_data.pct_low_snr));
+    legend('Power', 'Mean', 'AFS Candidates', 'Threshold', 'Location', 'best');
+    
+    % Plot 3: Histogram of measured power
+    subplot(2,2,3);
+    histogram(chirp_power_dB_norm, 30, 'Normalization', 'pdf', 'FaceColor', [0.9 0.3 0.3], 'EdgeColor', 'w');
+    hold on;
+    xline(0, 'g--', 'LineWidth', 1.5, 'Label', 'Mean');
+    xline(-6, 'm--', 'LineWidth', 1.5, 'Label', 'AFS Threshold');
+    hold off;
+    grid on;
+    xlabel('Power Deviation (dB)');
+    ylabel('Probability Density');
+    title('Power Fluctuation Histogram');
+    
+    % Plot 4: AFS local SNR analysis
+    subplot(2,2,4);
+    plot(1:N_sweeps_total, afs_data.local_snr_dB, 'r-', 'LineWidth', 0.8);
+    hold on;
+    yline(afs_data.threshold_dB, 'b--', 'LineWidth', 1.5, 'Label', 'AFS Threshold');
+    yline(SNR_dB, 'g--', 'LineWidth', 1.5, 'Label', 'Mean SNR');
+    hold off;
+    grid on;
+    xlabel('Chirp Index');
+    ylabel('Local SNR (dB)');
+    title(sprintf('AFS Local SNR (%.1f%% below threshold)', afs_data.pct_low_snr));
+    
+    sgtitle(sprintf('Swerling II Target Model - 24 GHz (M=%d chirps, Mean RCS=%.1f dBsm)', N_sweeps_total, SWERLING_MEAN_RCS_DBSM));
+end
+
 %% ===================== 11) Final Report & Save =====================
 fprintf('\n=== FINAL ESTIMATE (IF-limited, two-stage) ===\n');
 fprintf('True R=%.2f m | fb_true=%.3f MHz\n', range_true, fb_true/1e6);
@@ -397,7 +599,16 @@ if SAVE_BEAT_FILES
     % Save the detector’s wide-IF vector (single-sweep processed segment)
     t_out  = t_fast_k;      % match the trimmed segment length
     beat_signal = x_wide;   %#ok<NASGU>
-    save(output_filename, 'beat_signal','fs_out','t_out');
+    
+    % Include Swerling II data for downstream processing (AFS, fusion, etc.)
+    swerling_data = struct();
+    swerling_data.enabled = USE_SWERLING_II;
+    swerling_data.mean_rcs_dBsm = SWERLING_MEAN_RCS_DBSM;
+    swerling_data.chirp_power_dB = chirp_power_dB;
+    swerling_data.chirp_power_dB_norm = chirp_power_dB_norm;
+    swerling_data.afs_data = afs_data;
+    
+    save(output_filename, 'beat_signal', 'fs_out', 't_out', 'swerling_data');
 
     % Optional text save (real part for quick viewing)
     txt_filename = 'beat_24GHz.txt';
