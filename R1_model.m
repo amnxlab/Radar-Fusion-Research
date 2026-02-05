@@ -45,7 +45,7 @@ Ts_min     = (2*Rmax)/c;  % minimum sweep time (no ambiguity)
 bw         = 150e6;       % Hz (sweep bandwidth)
 fs         = 2*bw;        % Hz
 sweep_time = 5*Ts_min;    % ~3.33 us
-NumSweeps  = 1024;        % total chirps
+NumSweeps  = 512;         % total chirps (M=512 per requirement)
 
 % Scenario
 range_true = 37;          % m

@@ -45,7 +45,7 @@ range_estimate = params.range_estimate;
 delta_R = params.delta_R;
 v_r_max = getfield_safe(params, 'v_r_max', 10);
 T_r = params.T_r;
-n_ref = getfield_safe(params, 'n_ref', 8);
+n_ref = getfield_safe(params, 'n_ref', 4);
 fs = getfield_safe(params, 'fs', 1e6);
 plot_enable = getfield_safe(params, 'plot_enable', true);
 
