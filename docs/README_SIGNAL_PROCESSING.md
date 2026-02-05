@@ -119,43 +119,62 @@ graph LR
 
 ### Stage C: Dechirp & Swerling II Model
 
-This stage converts the time-domain signal into the beat-frequency domain and applies statistical RCS fluctuations.
+This stage performs three critical functions: 
+1.  **Dechirping**: Compresses the wideband chirp into a narrowband beat frequency.
+2.  **Swerling II Physics**: Applies frame-to-frame RCS fluctuations (decorrelated per chirp).
+3.  **Lane Splitting**: Separates data for processing (all chirps) vs visualization (UP-chirps only).
 
 ```mermaid
-graph TB
-    %% Inputs
-    RX1D[rx1d Input Vector]:::signal
-    TX1D[tx1d Input Vector]:::signal
+graph TD
+    %% Define inputs
+    RX[RX Signal Vector]:::signal
+    TX[TX Signal Vector]:::signal
     
-    %% reshaping
-    Reshape[Reshape to Matrix<br>Nsweep x M]:::process
+    subgraph "1. Matrix Reshaping"
+        Reshape[Reshape 1D to Matrix<br>Fast-Time x Slow-Time]:::process
+    end
     
-    %% Dechirp
-    DechirpNode[Dechirp Operation<br>beat = rx * conj_tx]:::process
+    subgraph "2. Dechirp (Pulse Compression)"
+        Conj{Conjugate TX}:::math
+        Mix((X)):::math
+        BeatRaw[Raw Beat Matrix]:::signal
+    end
     
-    %% Swerling Branch
-    SwerlingGen[Swerling II Generator]:::physics
-    Alpha[Generate Alpha Gain<br>Exp Distribution]:::physics
+    subgraph "3. Swerling II Physics (RCS)"
+        GenGauss[Generate Complex Gaussian<br>Re, Im ~ N 0,1]:::physics
+        Power[Calc Power & Normalize<br>|alpha|^2 ~ Exp Dist]:::physics
+        ApplyAlpha[Apply Phasor<br>beat * alpha_m]:::process
+    end
     
-    %% Mixing
-    ApplyFluct[Apply Fluctuation<br>beatM * alpha]:::process
-    
-    %% Output
-    BeatFull[beatM_full Matrix]:::signal
+    subgraph "4. Data Routing (Lane Split)"
+        BeatFull[beatM_full]:::signal
+        Split{Split}:::process
+        DetectLane[Detection Lane<br>All Chirps]:::output
+        PlotLane[Plotting Lane<br>UP-Sweeps Only]:::output
+    end
 
-    %% Connections
-    RX1D --> Reshape
-    TX1D --> Reshape
-    Reshape --> DechirpNode
-    DechirpNode --> ApplyFluct
-    SwerlingGen --> Alpha --> ApplyFluct
-    ApplyFluct --> BeatFull
+    %% Flow
+    RX --> Reshape
+    TX --> Reshape
+    Reshape -->|rxM / txM| Mix
+    Reshape -->|txM| Conj
+    Conj -->|tx*| Mix
+    Mix -->|rx * tx*| BeatRaw
     
-    %% Styles - High Contrast
-    classDef signal fill:#BBDEFB,stroke:#333,stroke-width:1px,color:black;
-    classDef process fill:#E1BEE7,stroke:#333,stroke-width:1px,color:black;
-    classDef physics fill:#FFF9C4,stroke:#333,stroke-width:1px,color:black;
+    BeatRaw --> ApplyAlpha
+    GenGauss --> Power -->|alpha vectors| ApplyAlpha
+    
+    ApplyAlpha --> BeatFull
+    BeatFull --> Split
+    Split -->|Full Data| DetectLane
+    Split -->|Subset| PlotLane
+
+    %% Specific Styles for this graph
+    classDef math fill:#FFECB3,stroke:#FF6F00,stroke-width:2px;
+    classDef output fill:#C8E6C9,stroke:#333,stroke-width:2px;
 ```
+
+**Physics Note**: The "Dechirp" operation ($RX \cdot TX^*$) mathematically extracts the range delay as a frequency shift ($f_b$). The Swerling model then modulates this clean signal with a stochastic complex gain ($\alpha$) to simulate a fluctuating target cross-section.
 
 ### Stage D: Range Estimation (Phase-Slope Method)
 
