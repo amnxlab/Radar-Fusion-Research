@@ -135,7 +135,7 @@ graph TB
     
     %% Swerling Branch
     SwerlingGen[Swerling II Generator]:::physics
-    Alpha[Generate Alpha Gain<br>|alpha|^2 ~ Exp_1]:::physics
+    Alpha[Generate Alpha Gain<br>Exp Distribution]:::physics
     
     %% Mixing
     ApplyFluct[Apply Fluctuation<br>beatM * alpha]:::process
