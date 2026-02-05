@@ -561,17 +561,28 @@ if USE_SWERLING_II && PLOT_SWERLING
     title(sprintf('AFS Candidates (%.1f%% flagged)', afs_data.pct_low_snr));
     legend('Power', 'Mean', 'AFS Candidates', 'Threshold', 'Location', 'best');
     
-    % Plot 3: Histogram of measured power
+    % Plot 3: Histogram of measured power vs theoretical chi-squared(2)
     subplot(2,2,3);
     histogram(chirp_power_dB_norm, 30, 'Normalization', 'pdf', 'FaceColor', [0.9 0.3 0.3], 'EdgeColor', 'w');
     hold on;
-    xline(0, 'g--', 'LineWidth', 1.5, 'Label', 'Mean');
-    xline(-6, 'm--', 'LineWidth', 1.5, 'Label', 'AFS Threshold');
+    
+    % Theoretical PDF for Swerling II (exponential in linear, transformed to dB)
+    % For normalized power in dB: P_dB = 10*log10(P_linear)
+    % where P_linear ~ Exponential(1) for Swerling II
+    % PDF transformation: f_dB(x) = (ln(10)/10) * 10^(x/10) * exp(-10^(x/10))
+    dB_range = linspace(min(chirp_power_dB_norm)-5, max(chirp_power_dB_norm)+5, 200);
+    ln10 = log(10);
+    pdf_theory = (ln10/10) .* 10.^(dB_range/10) .* exp(-10.^(dB_range/10));
+    plot(dB_range, pdf_theory, 'r-', 'LineWidth', 2, 'DisplayName', 'Theory (Chi-sq(2))');
+    
+    xline(0, 'g--', 'LineWidth', 1.5, 'DisplayName', 'Mean');
+    xline(-6, 'm--', 'LineWidth', 1.5, 'DisplayName', 'AFS Threshold');
     hold off;
     grid on;
     xlabel('Power Deviation (dB)');
     ylabel('Probability Density');
-    title('Power Fluctuation Histogram');
+    title('RCS Histogram vs Chi-squared(2) Theory');
+    legend('Simulated', 'Theory', 'Mean', 'AFS Threshold', 'Location', 'best');
     
     % Plot 4: AFS local SNR analysis
     subplot(2,2,4);
