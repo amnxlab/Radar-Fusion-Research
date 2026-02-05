@@ -182,9 +182,12 @@ graph TD
     Split -->|Full Data| DetectLane
     Split -->|Subset| PlotLane
 
-    %% Specific Styles for this graph
-    classDef math fill:#FFECB3,stroke:#FF6F00,stroke-width:2px;
-    classDef output fill:#C8E6C9,stroke:#333,stroke-width:2px;
+    %% Specific Styles for this graph - High Contrast Matches Global
+    classDef signal fill:#BBDEFB,stroke:#333,stroke-width:1px,color:black;
+    classDef process fill:#E1BEE7,stroke:#333,stroke-width:1px,color:black;
+    classDef physics fill:#FFF9C4,stroke:#333,stroke-width:1px,color:black;
+    classDef output fill:#C8E6C9,stroke:#333,stroke-width:1px,color:black;
+    classDef math fill:#FFECB3,stroke:#FF6F00,stroke-width:1px,color:black;
 ```
 
 **Physics Note**: The "Dechirp" operation ($RX \cdot TX^*$) mathematically extracts the range delay as a frequency shift ($f_b$). The Swerling model then modulates this clean signal with a stochastic complex gain ($\alpha$) to simulate a fluctuating target cross-section.
