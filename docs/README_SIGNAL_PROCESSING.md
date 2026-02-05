@@ -14,12 +14,12 @@ The following diagram illustrates the complete end-to-end data flow from configu
 
 ```mermaid
 graph TD
-    %% Define Styles
-    classDef config fill:#f9f,stroke:#333,stroke-width:2px;
-    classDef signal fill:#d4e1f5,stroke:#333,stroke-width:2px;
-    classDef process fill:#e1f5fe,stroke:#333,stroke-width:2px;
-    classDef physics fill:#fff9c4,stroke:#333,stroke-width:2px;
-    classDef output fill:#c8e6c9,stroke:#333,stroke-width:2px;
+    %% Define Styles - High Contrast
+    classDef config fill:#FFCCBC,stroke:#333,stroke-width:2px,color:black;
+    classDef signal fill:#BBDEFB,stroke:#333,stroke-width:2px,color:black;
+    classDef process fill:#E1BEE7,stroke:#333,stroke-width:2px,color:black;
+    classDef physics fill:#FFF9C4,stroke:#333,stroke-width:2px,color:black;
+    classDef output fill:#C8E6C9,stroke:#333,stroke-width:2px,color:black;
 
     subgraph "Initialization & Physics"
         Config[Configuration & Toggles]:::config --> Params[System Constants]:::config
@@ -96,11 +96,11 @@ graph LR
     LNA[LNA Amplifier 60dB]:::process
     RX_Out(RX Output):::signal
     
-    %% Styles
-    classDef signal fill:#d4e1f5,stroke:#333;
-    classDef process fill:#ffccbc,stroke:#333;
-    classDef physics fill:#fff9c4,stroke:#333;
-    classDef config fill:#f0f0f0,stroke:#333,stroke-dasharray: 5 5;
+    %% Styles - High Contrast
+    classDef signal fill:#BBDEFB,stroke:#333,stroke-width:1px,color:black;
+    classDef process fill:#E1BEE7,stroke:#333,stroke-width:1px,color:black;
+    classDef physics fill:#FFF9C4,stroke:#333,stroke-width:1px,color:black;
+    classDef config fill:#FFCCBC,stroke:#333,stroke-dasharray: 5 5,color:black;
 
     %% Flows
     RX_Clean --> Adder
@@ -117,32 +117,28 @@ graph LR
     end
 ```
 
-**Note**: 
-*   **Old Model** (Incorrect): `Signal -> Amp -> Add Noise` (Simulated SNR was too high).
-*   **Current Model** (Correct): `Signal -> Add Noise -> Amp` (Simulated SNR matches range equation).
-
 ### Stage C: Dechirp & Swerling II Model
 
 This stage converts the time-domain signal into the beat-frequency domain and applies statistical RCS fluctuations.
 
 ```mermaid
-flowchart TB
+graph TB
     %% Inputs
     RX1D[rx1d Input Vector]:::signal
     TX1D[tx1d Input Vector]:::signal
     
     %% reshaping
-    Reshape[Reshape to Matrix<br/>[Nsweep x M]]:::process
+    Reshape[Reshape to Matrix<br>Nsweep x M]:::process
     
     %% Dechirp
-    DechirpNode[Dechirp Operation<br/>beat = rx * conj(tx)]:::process
+    DechirpNode[Dechirp Operation<br>beat = rx * conj_tx]:::process
     
     %% Swerling Branch
     SwerlingGen[Swerling II Generator]:::physics
-    Alpha[Generate Alpha Gain<br/>|alpha|^2 ~ Exp(1)]:::physics
+    Alpha[Generate Alpha Gain<br>|alpha|^2 ~ Exp_1]:::physics
     
     %% Mixing
-    ApplyFluct[Apply Fluctuation<br/>beatM(:,m) *= alpha(m)]:::process
+    ApplyFluct[Apply Fluctuation<br>beatM * alpha]:::process
     
     %% Output
     BeatFull[beatM_full Matrix]:::signal
@@ -155,9 +151,10 @@ flowchart TB
     SwerlingGen --> Alpha --> ApplyFluct
     ApplyFluct --> BeatFull
     
-    classDef signal fill:#d4e1f5,stroke:#333;
-    classDef process fill:#e1f5fe,stroke:#333;
-    classDef physics fill:#fff9c4,stroke:#333;
+    %% Styles - High Contrast
+    classDef signal fill:#BBDEFB,stroke:#333,stroke-width:1px,color:black;
+    classDef process fill:#E1BEE7,stroke:#333,stroke-width:1px,color:black;
+    classDef physics fill:#FFF9C4,stroke:#333,stroke-width:1px,color:black;
 ```
 
 ### Stage D: Range Estimation (Phase-Slope Method)
@@ -174,17 +171,17 @@ graph TD
         Sel{Single or Multi?}:::process
         Single[Select Fixed Sweep]:::process
         Multi[Select Middle UP-Sweep]:::process
-        Trim[Edge Trimming<br/>(Keep 10-90%)]:::process
+        Trim[Edge Trimming<br>Keep 10-90%]:::process
     end
     
     subgraph "Filtering"
-        BPF[Wide-IF Bandpass Filter<br/>0.1 - 50 MHz]:::process
+        BPF[Wide-IF Bandpass Filter<br>0.1 - 50 MHz]:::process
     end
     
     subgraph "Estimation Logic"
         Unwrap[Phase Unwrap]:::process
-        RobustFit[Robust Linear Fit<br/>(Weighted Least Squares)]:::process
-        Calc[Calc Range from Slope<br/>R = c*fb / 2*mu]:::process
+        RobustFit[Robust Linear Fit<br>Weighted Least Squares]:::process
+        Calc[Calc Range from Slope<br>R = c*fb / 2*mu]:::process
     end
     
     %% Output
@@ -202,9 +199,10 @@ graph TD
     RobustFit --> Calc
     Calc --> Result
 
-    classDef signal fill:#d4e1f5,stroke:#333;
-    classDef process fill:#c5cae9,stroke:#333;
-    classDef output fill:#c8e6c9,stroke:#333;
+    %% Styles - High Contrast
+    classDef signal fill:#BBDEFB,stroke:#333,stroke-width:1px,color:black;
+    classDef process fill:#E1BEE7,stroke:#333,stroke-width:1px,color:black;
+    classDef output fill:#C8E6C9,stroke:#333,stroke-width:1px,color:black;
 ```
 
 ### Stage E: Adaptive Fusion Selection (AFS)
@@ -212,7 +210,7 @@ graph TD
 AFS filters out chirps that have low SNR due to RCS nulls (deep fades), preparing the data for clean fusion.
 
 ```mermaid
-flowchart LR
+graph LR
     %% Inputs
     InBeat[beatM_full]:::signal
     RangeEst[R_est]:::signal
@@ -220,10 +218,10 @@ flowchart LR
     %% Logic
     Goal(For Each Chirp...):::process
     
-    CFAR[CFAR Detection<br/>Calc SNR at R_est]:::process
-    Threshold{SNR < SNR_mean - 6dB?};
+    CFAR[CFAR Detection<br>Calc SNR at R_est]:::process
+    Threshold{SNR < SNR_mean - 6dB?}:::process
     
-    Null[Nullify Chirp<br/>Set to 0]:::process
+    Null[Nullify Chirp<br>Set to 0]:::process
     Keep[Keep Chirp]:::process
     
     OutBeat[beat_cleaned]:::output
@@ -238,9 +236,10 @@ flowchart LR
     Null --> OutBeat
     Keep --> OutBeat
     
-    classDef signal fill:#d4e1f5,stroke:#333;
-    classDef process fill:#ffecb3,stroke:#333;
-    classDef output fill:#c8e6c9,stroke:#333;
+    %% Styles - High Contrast
+    classDef signal fill:#BBDEFB,stroke:#333,stroke-width:1px,color:black;
+    classDef process fill:#E1BEE7,stroke:#333,stroke-width:1px,color:black;
+    classDef output fill:#C8E6C9,stroke:#333,stroke-width:1px,color:black;
 ```
 
 ---
