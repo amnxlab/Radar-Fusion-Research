@@ -60,26 +60,39 @@ graph TD
 The signal originates as a perfect baseband chirp and propagates through the environment, picking up delay and attenuation.
 
 ```mermaid
-sequenceDiagram
-    participant TX as Transmitter
-    participant CH as Channel
-    participant TGT as Target
-    participant RX as Receiver
+graph LR
+    %% Styles - High Contrast
+    classDef signal fill:#BBDEFB,stroke:#333,stroke-width:1px,color:black;
+    classDef process fill:#E1BEE7,stroke:#333,stroke-width:1px,color:black;
+    classDef physics fill:#FFF9C4,stroke:#333,stroke-width:1px,color:black;
+    
+    subgraph "1. Waveform Source"
+        Gen[FMCW Generator<br>B=150MHz, T=3.33us]:::process
+        Eq[Signal Model<br>exp j_pi_mu_t^2]:::process
+    end
 
-    Note over TX: Generate FMCW Chirp
-    Note over TX: s_tx(t) = exp(j*pi*mu*t^2)
-    TX->>CH: Transmit Signal
-    
-    Note over CH: Free Space Path Loss (1/R^4)
-    CH->>TGT: Incident Wave
-    
-    Note over TGT: Reflection
-    Note over TGT: RCS (Mean)
-    TGT->>CH: Reflected Wave
-    
-    Note over CH: Return Path Loss
-    CH->>RX: Received Signal (Clean)
-    Note over RX: s_rx = A * s_tx(t-tau)
+    subgraph "2. Transmission"
+        TX_Ant[TX Antenna<br>Gain = +30dB]:::physics
+        Prop1[Forward Path<br>Loss = 1/R^4]:::physics
+    end
+
+    subgraph "3. Target Interaction"
+        Target[UAV Target<br>RCS Re-radiation]:::physics
+    end
+
+    subgraph "4. Reception"
+        Prop2[Return Path<br>Delay = 2R/c]:::physics
+        RX_Ant[RX Antenna<br>Capture Echo]:::physics
+        Signal[RX Signal<br>s_rx t]:::signal
+    end
+
+    %% Flow
+    Gen --> Eq --> TX_Ant
+    TX_Ant -->|Radiated Wave| Prop1
+    Prop1 -->|Incident Wave| Target
+    Target -->|Reflected Wave| Prop2
+    Prop2 -->|Echo| RX_Ant
+    RX_Ant --> Signal
 ```
 
 ### Stage B: RF Front-End (Input-Referred Noise)
@@ -142,7 +155,7 @@ graph TD
     
     subgraph "3. Swerling II Physics (RCS)"
         GenGauss[Generate Complex Gaussian<br>Re, Im ~ N 0,1]:::physics
-        Power[Calc Power & Normalize<br>|alpha|^2 ~ Exp Dist]:::physics
+        Power[Calc Power & Normalize<br>abs_alpha^2 ~ Exp Dist]:::physics
         ApplyAlpha[Apply Phasor<br>beat * alpha_m]:::process
     end
     
